@@ -1,0 +1,52 @@
+name: Push Buildpackage
+
+on:
+  release:
+    types:
+    - published
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  push:
+    name: Push
+    runs-on: ubuntu-22.04
+    steps:
+
+    - name: Parse Event
+      id: event
+      run: |
+        FULL_VERSION="$(jq -r '.release.tag_name' "${GITHUB_EVENT_PATH}" | sed s/^v//)"
+        MINOR_VERSION="$(echo "${FULL_VERSION}" | awk -F '.' '{print $1 "." $2 }')"
+        MAJOR_VERSION="$(echo "${FULL_VERSION}" | awk -F '.' '{print $1 }')"
+        echo "tag_full=${FULL_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "tag_minor=${MINOR_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "tag_major=${MAJOR_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "download_url=$(jq -r '.release.assets[] | select(.name | endswith(".cnb")) | .url' "${GITHUB_EVENT_PATH}")" >> "$GITHUB_OUTPUT"
+
+    - name: Download
+      id: download
+      uses: paketo-buildpacks/github-config/actions/release/download-asset@main
+      with:
+        url: ${{ steps.event.outputs.download_url }}
+        output: "/github/workspace/buildpackage.cnb"
+        token: ${{ secrets.NINE_BOT_GITHUB_TOKEN }}
+
+    - name: Validate version
+      run: |
+        buidpackTomlVersion=$(sudo skopeo inspect "oci-archive:${GITHUB_WORKSPACE}/buildpackage.cnb" | jq -r '.Labels."io.buildpacks.buildpackage.metadata" | fromjson | .version')
+        githubReleaseVersion="${{ steps.event.outputs.tag_full }}"
+        if [[ "$buidpackTomlVersion" != "$githubReleaseVersion" ]]; then
+          echo "Version in buildpack.toml ($buidpackTomlVersion) and github release ($githubReleaseVersion) are not identical"
+          exit 1
+        fi
+
+    - name: Push to GHCR
+      run: |
+        sudo skopeo login --username ${{ github.actor }} --password "${{ secrets.GITHUB_TOKEN }}" "${{ env.REGISTRY }}"
+        sudo skopeo copy "oci-archive:${GITHUB_WORKSPACE}/buildpackage.cnb" "docker://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.event.outputs.tag_full }}"
+        sudo skopeo copy "oci-archive:${GITHUB_WORKSPACE}/buildpackage.cnb" "docker://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.event.outputs.tag_minor }}"
+        sudo skopeo copy "oci-archive:${GITHUB_WORKSPACE}/buildpackage.cnb" "docker://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.event.outputs.tag_major }}"
+        sudo skopeo copy "oci-archive:${GITHUB_WORKSPACE}/buildpackage.cnb" "docker://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
