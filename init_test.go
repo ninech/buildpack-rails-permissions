@@ -1,4 +1,4 @@
-package permissions_test
+package permissions
 
 import (
 	"testing"

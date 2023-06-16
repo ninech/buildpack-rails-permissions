@@ -1,11 +1,11 @@
-package permissions_test
+package permissions
 
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 
-	permissions "github.com/ninech/buildpack-rails-permissions"
 	"github.com/paketo-buildpacks/packit/v2"
 	"github.com/paketo-buildpacks/packit/v2/scribe"
 	"github.com/sclevine/spec"
@@ -35,7 +35,7 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 		workingDir, err = os.MkdirTemp("", "working-dir")
 		Expect(err).NotTo(HaveOccurred())
 
-		build = permissions.Build(scribe.NewEmitter(bytes.NewBuffer(nil)))
+		build = Build(scribe.NewEmitter(bytes.NewBuffer(nil)))
 	})
 
 	it.After(func() {
@@ -44,7 +44,7 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 		Expect(os.RemoveAll(workingDir)).To(Succeed())
 	})
 
-	it("returns a result that builds correctly", func() {
+	it("creates rails dirs and sets permissions", func() {
 		_, err := build(packit.BuildContext{
 			WorkingDir: workingDir,
 			CNBPath:    cnbDir,
@@ -59,5 +59,17 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 			Layers: packit.Layers{Path: layersDir},
 		})
 		Expect(err).NotTo(HaveOccurred())
+
+		tmp, err := os.Stat(filepath.Join(workingDir, tmpDirName))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tmp.Mode()).To(Equal(os.ModeDir | 0770))
+
+		pids, err := os.Stat(filepath.Join(workingDir, tmpDirName, pidsDirName))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pids.Mode()).To(Equal(os.ModeDir | 0770))
+
+		cache, err := os.Stat(filepath.Join(workingDir, tmpDirName, cacheDirName))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cache.Mode()).To(Equal(os.ModeDir | 0770))
 	})
 }

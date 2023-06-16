@@ -1,11 +1,10 @@
-package permissions_test
+package permissions
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	permissions "github.com/ninech/buildpack-rails-permissions"
 	"github.com/paketo-buildpacks/packit/v2"
 	"github.com/sclevine/spec"
 
@@ -20,32 +19,74 @@ func testDetect(t *testing.T, context spec.G, it spec.S) {
 		detect     packit.DetectFunc
 	)
 
-	it.Before(func() {
-		var err error
-		workingDir, err = os.MkdirTemp("", "working-dir")
-		Expect(err).NotTo(HaveOccurred())
+	context("when a rails gemfile is present", func() {
+		it.Before(func() {
+			var err error
+			workingDir, err = os.MkdirTemp("", "working-dir-*")
+			Expect(err).NotTo(HaveOccurred())
 
-		const gemfile = `
+			const gemfile = `
 source "https://rubygems.org"
 
 gem "rails", "~> 7.0.0"
 		`
-		err = os.WriteFile(filepath.Join(workingDir, "Gemfile"), []byte(gemfile), os.ModePerm)
-		Expect(err).NotTo(HaveOccurred())
+			err = os.WriteFile(filepath.Join(workingDir, "Gemfile"), []byte(gemfile), os.ModePerm)
+			Expect(err).NotTo(HaveOccurred())
 
-		detect = permissions.Detect()
-	})
+			detect = Detect()
+		})
 
-	it.After(func() {
-		Expect(os.RemoveAll(workingDir)).To(Succeed())
-	})
+		it.After(func() {
+			Expect(os.RemoveAll(workingDir)).To(Succeed())
+		})
 
-	context("when conditions for detect true are met", func() {
 		it("detects", func() {
 			_, err := detect(packit.DetectContext{
 				WorkingDir: workingDir,
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	context("when a gemfile is present without rails", func() {
+		it.Before(func() {
+			var err error
+			workingDir, err = os.MkdirTemp("", "working-dir-*")
+			Expect(err).NotTo(HaveOccurred())
+
+			const gemfile = `
+source "https://rubygems.org"
+
+gem "something-else", "~> 1.0.0"
+		`
+			err = os.WriteFile(filepath.Join(workingDir, "Gemfile"), []byte(gemfile), os.ModePerm)
+			Expect(err).NotTo(HaveOccurred())
+
+			detect = Detect()
+		})
+
+		it.After(func() {
+			Expect(os.RemoveAll(workingDir)).To(Succeed())
+		})
+
+		it("fails detection", func() {
+			_, err := detect(packit.DetectContext{
+				WorkingDir: workingDir,
+			})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	context("when no gemfile is present", func() {
+		it.Before(func() {
+			detect = Detect()
+		})
+
+		it("fails detection", func() {
+			_, err := detect(packit.DetectContext{
+				WorkingDir: workingDir,
+			})
+			Expect(err).To(HaveOccurred())
 		})
 	})
 }
